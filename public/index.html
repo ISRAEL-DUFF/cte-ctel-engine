@@ -64,7 +64,14 @@
         <header class="mb-8">
             <h1 class="text-3xl font-bold text-gray-800 mb-2">Lien Node Visualizer</h1>
             <p class="text-gray-600">Interactive visualization of Lien Node hierarchy</p>
-            <div class="flex space-x-4 mt-4">
+            <div class="flex flex-wrap items-center gap-4 mt-4">
+                <div class="flex items-center gap-2">
+                    <label for="backend-select" class="text-sm text-gray-700">Backend:</label>
+                    <select id="backend-select" class="text-sm border rounded px-2 py-1">
+                        <option value="node">Node (http://localhost:3001)</option>
+                        <option value="go">Go (http://localhost:4001)</option>
+                    </select>
+                </div>
                 <button onclick="loadSample('default')" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
                     Load Default Sample
                 </button>
@@ -78,6 +85,7 @@
         </header>
 
         <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="mb-2 text-xs text-gray-600" id="backend-indicator">Using backend: http://localhost:3001</div>
             <div id="invariant-panel" class="hidden mb-4 p-4 rounded border flex items-center justify-between">
                 <div>
                     <p id="invariant-title" class="font-semibold">Invariant</p>
@@ -152,18 +160,36 @@
         });
 
         // Resolve API endpoints for given sample name
+        // Base URLs for backends
+        const BACKENDS = {
+            node: 'http://localhost:3001',
+            go: 'http://localhost:4001'
+        };
+
+        function currentBaseUrl() {
+            const sel = document.getElementById('backend-select');
+            const key = (sel && sel.value) || 'node';
+            return BACKENDS[key] || BACKENDS.node;
+        }
+
+        function updateBackendIndicator() {
+            const el = document.getElementById('backend-indicator');
+            if (el) el.textContent = `Using backend: ${currentBaseUrl()}`;
+        }
+
         function resolveEndpoints(sampleName) {
+            const base = currentBaseUrl();
             if (sampleName === 'default') {
                 return {
-                    markdown: '/cte/markdown',
-                    invariant: '/cte/invariant',
-                    unspent: '/cte/unspent'
+                    markdown: `${base}/cte/markdown`,
+                    invariant: `${base}/cte/invariant`,
+                    unspent: `${base}/cte/unspent`
                 };
             }
             return {
-                markdown: `/cte/${sampleName}/markdown`,
-                invariant: `/cte/${sampleName}/invariant`,
-                unspent: `/cte/${sampleName}/unspent`
+                markdown: `${base}/cte/${sampleName}/markdown`,
+                invariant: `${base}/cte/${sampleName}/invariant`,
+                unspent: `${base}/cte/${sampleName}/unspent`
             };
         }
 
@@ -315,6 +341,14 @@
             }
         });
 
+        // Change backend reloads current sample
+        document.getElementById('backend-select').addEventListener('change', () => {
+            updateBackendIndicator();
+            if (window.lastSampleName) {
+                loadSample(window.lastSampleName);
+            }
+        });
+
         // Keep track of last sample
         window.lastSampleName = 'default';
         const origLoadSample = loadSample;
@@ -325,6 +359,7 @@
 
         // Load default sample when page loads
         document.addEventListener('DOMContentLoaded', () => {
+            updateBackendIndicator();
             // Uncomment to auto-load a sample
             // loadSample('default');
         });
