@@ -47,32 +47,34 @@ export class LienNode {
 
     async splitNode(params: {
         tokens: LienToken [],
-        withDebit?: boolean;
     }) {
-        const totalCreditToken = this.creditLienTokens.reduce((prevToken, currToken) => {
-            prevToken.value += currToken.value
-            return prevToken;
-        })
+        // const totalCreditToken = this.creditLienTokens.reduce((prevToken, currToken) => {
+        //     prevToken.value += currToken.value
+        //     return prevToken;
+        // })
+        let totalCreditTokens = 0
+        for(const t of this.creditLienTokens) {
+            totalCreditTokens += t.value;
+        }
         let totalSplitAmount = 0;
 
         // validation
         for(const token of params.tokens) {
-            if(token.tokenType === 'debit' && !params.withDebit) {
-                // throw new Error('Only Credit tokens can be split')   /// only credit tokens can be splited
-                continue;
+            if(token.tokenType === 'debit') {
+                throw new Error('Only Credit tokens can be split')   /// only credit tokens can be splited
             }
 
             totalSplitAmount += token.value;
 
-            if(totalSplitAmount > totalCreditToken.value) {
+            if(totalSplitAmount > totalCreditTokens) {
                 throw new Error('Total tokens to split must not be larger than parent credit token')
             }
         }
 
         // split
-        const amountDiff = totalCreditToken.value - totalSplitAmount;
+        const amountDiff = totalCreditTokens - totalSplitAmount;
         for(const token of params.tokens) {
-
+            // console.log("Token:",token, token.account)
             this.children.push(new LienNode({
                 account: token.account,
                 parent: this,
@@ -86,6 +88,7 @@ export class LienNode {
 
         // if there's token left, redirect it back to this parent account
         if(amountDiff > 0) {
+            console.log('Amount diff:', amountDiff, 'parent:', this.account)
             this.children.push(new LienNode({
                 account: this.account,
                 parent: this,
@@ -101,6 +104,8 @@ export class LienNode {
 
         return this.children;
     }
+
+    
 
     async splitWithDebitLienNode(params: {
         tokens: {
@@ -134,6 +139,7 @@ export class LienNode {
                     }
                     ]
                 })
+                // console.log("NODE:",node.printTree())
                 children.push(node)
             } else {
                 children.push(new LienNode({
@@ -147,6 +153,14 @@ export class LienNode {
         }
 
         this.children = [...this.children, ...children];
+        // console.log("TREE:", {
+        //     parent: this.printTree(),
+        //     pCredits: this.creditLienTokens.reduce((sum, t) => sum + t.value, 0),
+        //     pDebits: this.debitLienTokens.reduce((sum, t) => sum + t.value, 0),
+        //     child: children[0].printTree(),
+        //     cCredits: children[0].creditLienTokens.reduce((sum, t) => sum + t.value, 0),
+        //     cDebits: children[0].debitLienTokens.reduce((sum, t) => sum + t.value, 0),
+        // })
         return this.children;
     }
 
@@ -307,15 +321,22 @@ export class LienNode {
         nodeMap.forEach((id, node) => {
             const tokens = [
                 ...node.creditLienTokens.map(t => `+${t.value} (${t.account})`),
+            ];
+            const debitTokens = [
                 ...node.debitLienTokens.map(t => `-${t.value} (${t.account})`)
             ];
             
-            if (tokens.length > 0) {
+            if (tokens.length > 0 || debitTokens.length > 0) {
                 const subgraphId = `subgraph${id}`;
                 mermaidCode += `    subgraph ${subgraphId}[ ]\n`;
                 tokens.forEach((token, i) => {
                     const tokenId = `${id}T${i}`;
                     mermaidCode += `        ${tokenId}["${token}"]:::token\n`;
+                    mermaidCode += `        ${id} --> ${tokenId}\n`;
+                });
+                debitTokens.forEach((token, i) => {
+                    const tokenId = `${id}T${i}-debit`;
+                    mermaidCode += `        ${tokenId}["${token}"]:::token-debit\n`;
                     mermaidCode += `        ${id} --> ${tokenId}\n`;
                 });
                 mermaidCode += '    end\n';
@@ -324,6 +345,7 @@ export class LienNode {
         
         // Add styles
         mermaidCode += '    classDef token fill:#f9f9f9,stroke:#666,stroke-width:1px,font-size:10px;\n';
+        mermaidCode += '    classDef token-debit fill:#f9f9f9,stroke:#666,stroke-width:1px,font-size:10px,stroke:#ff0000;\n';
         mermaidCode += '```';
         
         // Create the markdown with a title and the mermaid diagram

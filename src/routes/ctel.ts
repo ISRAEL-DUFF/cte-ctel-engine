@@ -64,7 +64,7 @@ async function createSampleHierarchy2() {
     const bNode = await root.getChildNode('B')
 
     if(!bNode) {
-        throw new Error('Unable to find node B')
+        throw new Error('Unable to find nodeeee B')
     }
 
     await bNode.splitNode({
@@ -75,17 +75,26 @@ async function createSampleHierarchy2() {
     const childBNode = await bNode.getChildNode('B')
 
     if(!childBNode) {
-        throw new Error('Unable to find node B')
+        throw new Error('Unable to find node child node B')
     }
 
-    await childBNode.splitWithDebitLienNode({
+    const c = await childBNode.splitWithDebitLienNode({
         tokens: [
             {
-                token: { tokenType: 'credit', value: 100, account: 'F' },
+                token: { tokenType: 'credit', value: 40, account: 'B' },
                 debitLien: 500
+            },
+            {
+                token: { tokenType: 'credit', value: 60, account: 'B' },
             }
         ]
     })
+    // const c = await childBNode.splitNode({
+    //     tokens: [
+    //         { tokenType: 'credit', value: 100, account: 'B' },
+    //     ]
+    // })
+    // console.log("C:",c.length, c[0].printTree(), c[0].creditLienTokens, c[0].debitLienTokens)
 
     const childChildBNode = await childBNode.getChildNode('B')
 
@@ -93,11 +102,16 @@ async function createSampleHierarchy2() {
         throw new Error('Unable to find node B')
     }
 
+    console.log("ChildChildBNode1:",childChildBNode?.printTree(), childChildBNode?.creditLienTokens, childChildBNode?.debitLienTokens, childChildBNode.children.length)
+
+
     await childChildBNode.splitNode({
         tokens: [
             { tokenType: 'credit', value: 600, account: 'G' },
         ]
     })
+
+    console.log("ChildChildBNode:",childChildBNode?.printTree(), childChildBNode?.creditLienTokens, childChildBNode?.debitLienTokens, childChildBNode.children.length)
 
     return root;
 }

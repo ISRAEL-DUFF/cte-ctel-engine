@@ -105,6 +105,10 @@
         mermaid.initialize({
             startOnLoad: false, // We'll call mermaid.init() manually
             theme: 'default',
+            themeVariables: {
+                clusterBkg: "#f0f0f0",    // background color for subgraphs
+                clusterBorder: "#333333" // border color for subgraphs
+            },
             securityLevel: 'loose',
             flowchart: {
                 useMaxWidth: true,
