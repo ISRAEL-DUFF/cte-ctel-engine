@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lien Node Visualizer</title>
+    <!-- Mermaid.js for diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <!-- Marked.js for markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .markdown-body {
+            box-sizing: border-box;
+            min-width: 200px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        @media (max-width: 767px) {
+            .markdown-body {
+                padding: 15px;
+            }
+        }
+        /* Mermaid diagram container */
+        .mermaid {
+            margin: 20px 0;
+            text-align: center;
+        }
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Lien Node Visualizer</h1>
+            <p class="text-gray-600">Interactive visualization of Lien Node hierarchy</p>
+            <div class="flex space-x-4 mt-4">
+                <button onclick="loadSample('default')" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                    Load Default Sample
+                </button>
+                <button onclick="loadSample('sample2')" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
+                    Load Sample 2
+                </button>
+            </div>
+        </header>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p class="text-center text-gray-600">Generating visualization...</p>
+            </div>
+            <div id="error" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+                <p id="error-message"></p>
+            </div>
+            <div id="content" class="markdown-body">
+                <!-- Content will be loaded here -->
+                <div class="text-center text-gray-500 py-8">
+                    <p>Select a sample to begin visualization.</p>
+                    <p class="text-sm mt-2">The diagram will be rendered here with Mermaid.js</p>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-8 text-center text-gray-500 text-sm">
+            <p>Lien Node Visualizer &copy; 2025 | 
+                <a href="/cte/markdown" class="text-blue-600 hover:underline" target="_blank" download="lien-node-diagram.md">
+                    Download Markdown
+                </a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize Mermaid
+        mermaid.initialize({
+            startOnLoad: false, // We'll call mermaid.init() manually
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+
+        // Function to load a sample
+        async function loadSample(sampleName) {
+            const loading = document.getElementById('loading');
+            const content = document.getElementById('content');
+            const errorDiv = document.getElementById('error');
+            const errorMessage = document.getElementById('error-message');
+            
+            // Show loading, hide content and clear any previous errors
+            loading.classList.remove('hidden');
+            content.innerHTML = '';
+            errorDiv.classList.add('hidden');
+            
+            try {
+                // Fetch the markdown from our API
+                const response = await fetch(`/cte/${sampleName}/markdown`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const markdown = await response.text();
+                
+                // Parse markdown to HTML
+                const html = marked.parse(markdown);
+                content.innerHTML = html;
+                
+                // Find and render all mermaid diagrams
+                const mermaidElements = document.querySelectorAll('.language-mermaid');
+                
+                if (mermaidElements.length > 0) {
+                    // Add mermaid class to all mermaid code blocks
+                    mermaidElements.forEach(element => {
+                        element.classList.add('mermaid');
+                        // Remove the code tag's default styling
+                        const codeElement = element.querySelector('code');
+                        if (codeElement) {
+                            element.textContent = codeElement.textContent;
+                        }
+                    });
+                    
+                    // Initialize Mermaid
+                    try {
+                        await mermaid.run({
+                            querySelector: '.mermaid',
+                            suppressErrors: false
+                        });
+                    } catch (mermaidError) {
+                        console.error('Mermaid rendering error:', mermaidError);
+                        throw new Error('Error rendering diagram. Please try again.');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error loading sample:', error);
+                errorMessage.textContent = `Error: ${error.message}`;
+                errorDiv.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        // Load default sample when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Uncomment to auto-load a sample
+            // loadSample('default');
+        });
+    </script>
+</body>
+</html>
