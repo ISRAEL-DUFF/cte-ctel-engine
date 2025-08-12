@@ -82,7 +82,8 @@ async function createSampleHierarchy2() {
         tokens: [
             {
                 token: { tokenType: 'credit', value: 40, account: 'B' },
-                debitLien: 500
+                // Ensure lien does not exceed available unspent credit (100 at this point)
+                debitLien: 80
             },
             {
                 token: { tokenType: 'credit', value: 60, account: 'B' },
@@ -102,16 +103,27 @@ async function createSampleHierarchy2() {
         throw new Error('Unable to find node B')
     }
 
-    console.log("ChildChildBNode1:",childChildBNode?.printTree(), childChildBNode?.creditLienTokens, childChildBNode?.debitLienTokens, childChildBNode.children.length)
-
+    console.log("ChildChildBNode1:", childChildBNode?.printTree(), 
+        'Unspent Credits:', childChildBNode?.unspentCreditTokens.map(t => `${t.value}(${t.account})`),
+        'Unspent Debits:', childChildBNode?.unspentDebitTokens.map(t => `${t.value}(${t.account})`),
+        'All Credits:', childChildBNode?.allCreditTokens.map(t => `${t.value}(${t.account}${t.spent ? ', spent' : ''})`),
+        'All Debits:', childChildBNode?.allDebitTokens.map(t => `${t.value}(${t.account}${t.spent ? ', spent' : ''})`),
+        'Children:', childChildBNode?.children.length
+    );
 
     await childChildBNode.splitNode({
         tokens: [
-            { tokenType: 'credit', value: 600, account: 'G' },
+            { tokenType: 'credit', value: 100, account: 'G' },
         ]
-    })
+    });
 
-    console.log("ChildChildBNode:",childChildBNode?.printTree(), childChildBNode?.creditLienTokens, childChildBNode?.debitLienTokens, childChildBNode.children.length)
+    console.log("ChildChildBNode after split:", childChildBNode?.printTree(),
+        'Unspent Credits:', childChildBNode?.unspentCreditTokens.map(t => `${t.value}(${t.account})`),
+        'Unspent Debits:', childChildBNode?.unspentDebitTokens.map(t => `${t.value}(${t.account})`),
+        'All Credits:', childChildBNode?.allCreditTokens.map(t => `${t.value}(${t.account}${t.spent ? ', spent' : ''})`),
+        'All Debits:', childChildBNode?.allDebitTokens.map(t => `${t.value}(${t.account}${t.spent ? ', spent' : ''})`),
+        'Children:', childChildBNode?.children.length
+    );
 
     return root;
 }

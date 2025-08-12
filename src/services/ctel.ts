@@ -1,10 +1,19 @@
 interface LienToken {
-    tokenType: 'credit' | 'debit'
+    tokenType: 'credit' | 'debit';
     value: number;
     account: string;
+    spent?: boolean;  // Tracks if token has been spent
+    spentOn?: string; // Optional: tracks what operation spent this token
+    id?: string;      // Unique identifier for each token
 }
 
 export class LienNode {
+    // Track all tokens (both spent and unspent)
+    private creditLienTokens: LienToken[] = [];
+    private debitLienTokens: LienToken[] = [];
+    
+    // Getters for spent tokens (computed properties)
+
     constructor(config: {
         account: string,
         childrdren?: LienNode[],
@@ -15,15 +24,19 @@ export class LienNode {
         this.account = config.account;
         this.parent = config.parent;
 
+        // Initialize tokens with unique IDs and mark as unspent
         for(const token of config.tokens) {
-            if(token.tokenType === 'credit') {
-                // TODO: validate
-                this.creditLienTokens.push(token);
-            } else {
-                // TODO: confirm if this debit lien was actually placed.
-                this.debitLienTokens.push(token);
-            }
+            const tokenWithId = {
+                ...token,
+                id: token.id || `token_${Math.random().toString(36).substr(2, 9)}`,
+                spent: false
+            };
 
+            if(token.tokenType === 'credit') {
+                this.creditLienTokens.push(tokenWithId);
+            } else {
+                this.debitLienTokens.push(tokenWithId);
+            }
         }
 
         /* TODO: validate each childrdren to ensure they:
@@ -38,68 +51,140 @@ export class LienNode {
         }
     }
 
-    children: LienNode[] = []
-    debitLienTokens: LienToken[] = []
-    creditLienTokens: LienToken[] = []
+    children: LienNode[] = [];
     account: string;
+
+    // Getter for unspent credit tokens
+    get unspentCreditTokens(): LienToken[] {
+        return this.creditLienTokens.filter(t => !t.spent);
+    }
+
+    // Getter for spent credit tokens
+    get spentCreditTokens(): LienToken[] {
+        return this.creditLienTokens.filter(t => t.spent);
+    }
+
+    // Getter for unspent debit tokens
+    get unspentDebitTokens(): LienToken[] {
+        return this.debitLienTokens.filter(t => !t.spent);
+    }
+
+    // Getter for spent debit tokens
+    get spentDebitTokens(): LienToken[] {
+        return this.debitLienTokens.filter(t => t.spent);
+    }
+
+    // Get all tokens (including spent ones)
+    get allCreditTokens(): LienToken[] {
+        // Return a copy of all credit tokens (both spent and unspent)
+        return [...this.creditLienTokens];
+    }
+
+    get allDebitTokens(): LienToken[] {
+        return [...this.debitLienTokens, ...this.spentDebitTokens];
+    }
+
+    // Helper to mark tokens as spent
+    private markTokensAsSpent(tokens: LienToken[], reason: string = 'split'): void {
+        tokens.forEach(token => {
+            // Find and update the token in the appropriate array
+            if (token.tokenType === 'credit') {
+                const tokenToUpdate = this.creditLienTokens.find(t => t.id === token.id);
+                if (tokenToUpdate) {
+                    tokenToUpdate.spent = true;
+                    tokenToUpdate.spentOn = reason;
+                }
+            } else {
+                const tokenToUpdate = this.debitLienTokens.find(t => t.id === token.id);
+                if (tokenToUpdate) {
+                    tokenToUpdate.spent = true;
+                    tokenToUpdate.spentOn = reason;
+                }
+            }
+        });
+    }
+
+    // Helper to get tokens to spend based on amount needed
+    private getTokensToSpend(amount: number, tokenType: 'credit' | 'debit'): {tokens: LienToken[], remaining: number} {
+        const tokens: LienToken[] = [];
+        let remaining = amount;
+        const sourceTokens = tokenType === 'credit' ? this.unspentCreditTokens : this.unspentDebitTokens;
+
+        for (const token of sourceTokens) {
+            if (remaining <= 0) break;
+            
+            const amountToTake = Math.min(remaining, token.value);
+            if (amountToTake > 0) {
+                tokens.push({
+                    ...token,
+                    value: amountToTake
+                });
+                remaining -= amountToTake;
+            }
+        }
+
+        return { tokens, remaining };
+    }
     parent: LienNode | null | undefined;
 
 
     async splitNode(params: {
         tokens: LienToken [],
     }) {
-        // const totalCreditToken = this.creditLienTokens.reduce((prevToken, currToken) => {
-        //     prevToken.value += currToken.value
-        //     return prevToken;
-        // })
-        let totalCreditTokens = 0
-        for(const t of this.creditLienTokens) {
-            totalCreditTokens += t.value;
-        }
+        // Calculate total available unspent credits
+        const availableCredits = this.unspentCreditTokens.reduce((sum, t) => sum + t.value, 0);
         let totalSplitAmount = 0;
 
-        // validation
+        // Validate the split request
         for(const token of params.tokens) {
             if(token.tokenType === 'debit') {
-                throw new Error('Only Credit tokens can be split')   /// only credit tokens can be splited
+                throw new Error('Only Credit tokens can be split');
             }
 
             totalSplitAmount += token.value;
 
-            if(totalSplitAmount > totalCreditTokens) {
-                throw new Error('Total tokens to split must not be larger than parent credit token')
+            if(totalSplitAmount > availableCredits) {
+                throw new Error('Total tokens to split must not be larger than available unspent credit tokens');
             }
         }
 
-        // split
-        const amountDiff = totalCreditTokens - totalSplitAmount;
+        // Get the tokens that will be spent in this split
+        const { tokens: tokensToSpend } = this.getTokensToSpend(totalSplitAmount, 'credit');
+        
+        // Mark the spent tokens
+        this.markTokensAsSpent(tokensToSpend, 'split');
+
+        // Clear existing children to prevent duplicates
+        this.children = [];
+
+        // Create new child nodes with the split amounts
         for(const token of params.tokens) {
-            // console.log("Token:",token, token.account)
             this.children.push(new LienNode({
                 account: token.account,
                 parent: this,
                 tokens: [{
                     tokenType: 'credit',
                     account: token.account,
-                    value: token.value
+                    value: token.value,
+                    id: `split_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
                 }]
-            }))
+            }));
         }
 
-        // if there's token left, redirect it back to this parent account
-        if(amountDiff > 0) {
-            console.log('Amount diff:', amountDiff, 'parent:', this.account)
+        // Only add remainder if not zero
+        const remainingAmount = availableCredits - totalSplitAmount;
+        if(remainingAmount > 0) {
+            console.log('Amount diff:', remainingAmount, 'parent:', this.account);
             this.children.push(new LienNode({
                 account: this.account,
                 parent: this,
-                tokens: [
-                    {
-                        tokenType: 'credit',
-                        account: this.account,
-                        value: amountDiff
-                    }
-                ]
-            }))
+                tokens: [{
+                    tokenType: 'credit',
+                    account: this.account,
+                    value: remainingAmount,
+                    id: `remainder_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
+                }]
+            }));
         }
 
         return this.children;
@@ -113,54 +198,90 @@ export class LienNode {
             debitLien?: number  // when this is given, it means that this account should be placed on-lien using the specified amount
         } [],
     }) {
-        const children: LienNode[] = []
+        console.log('splitWithDebitLienNode called with params:', JSON.stringify(params, null, 2));
+        const children: LienNode[] = [];
+        
+        // First, validate we have enough unspent credit for all the debit liens
+        const totalDebitLienAmount = params.tokens
+            .map(t => t.debitLien || 0)
+            .reduce((sum, amount) => sum + amount, 0);
+            
+        console.log('Total debit lien amount:', totalDebitLienAmount);
+        
+        if (totalDebitLienAmount > 0) {
+            const availableCredits = this.unspentCreditTokens.reduce((sum, token) => sum + token.value, 0);
+            console.log('Available credits:', availableCredits, 'Unspent tokens:', this.unspentCreditTokens);
+            if (totalDebitLienAmount > availableCredits) {
+                throw new Error(`Insufficient unspent credit for debit liens. Needed: ${totalDebitLienAmount}, Available: ${availableCredits}`);
+            }
+        }
+        
+        // Process each token in the split
         for(const t of params.tokens) {
-            if(t.debitLien && t.debitLien > 0) {
-                const success = await this.placeLien(t.debitLien);
-                if(!success) {
-                    throw new Error('Unable to place lien')
-                }
+            console.log('Processing token:', JSON.stringify(t, null, 2));
+            
+            if (t.debitLien && t.debitLien > 0) {
+                console.log(`Processing token with debit lien: ${t.debitLien}`);
+                
+                // For tokens with a debit lien, we need to:
+                // 1. Mark the credit tokens as spent in the current node
+                const { tokens: tokensForLien } = this.getTokensToSpend(t.debitLien, 'credit');
+                console.log('Marking tokens as spent for debit lien:', tokensForLien);
+                this.markTokensAsSpent(tokensForLien, 'debit_lien');
 
+                // 2. Create a new node with:
+                //    - A credit token representing the lien (unspent)
+                //    - A debit token representing the lien (unspent)
+                //    - The original token (unspent)
+                const newCreditToken = {
+                    tokenType: 'credit' as const,
+                    account: t.token.account, // Use the token's account, not this.account
+                    value: t.debitLien,
+                    id: `lien_credit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    spent: false
+                };
+                
+                const newDebitToken = {
+                    tokenType: 'debit' as const,
+                    account: t.token.account, // Use the token's account, not this.account
+                    value: t.debitLien,
+                    id: `lien_debit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    spent: false
+                };
+                
+                const originalToken = {
+                    ...t.token,
+                    id: t.token.id || `token_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    spent: false,
+                    account: t.token.account // Ensure the account is set correctly
+                };
+                
+                console.log('Creating node with tokens:', { newCreditToken, newDebitToken, originalToken });
+                
                 const node = await this.generateDebitNode({
-                    tokens: [{
-                        tokenType: 'credit',
-                        account: this.account,
-                        value: t.debitLien
-                    },
-                    {
-                        tokenType: 'debit',
-                        account: this.account,
-                        value: t.debitLien
-                    },
-                    {
-                        tokenType: 'credit',
-                        account: this.account,
-                        value: t.token.value
-                    }
-                    ]
-                })
-                // console.log("NODE:",node.printTree())
-                children.push(node)
+                    tokens: [newCreditToken, newDebitToken, originalToken],
+                    account: t.token.account // Set the node's account to match the token's account
+                });
+                
+                console.log('Created node:', node.account, 'with tokens:', node.allCreditTokens, node.allDebitTokens);
+                children.push(node);
             } else {
+                // For tokens without a debit lien, just create a regular node with the token
                 children.push(new LienNode({
                     account: t.token.account,
                     parent: this,
-                    tokens: [
-                        t.token
-                    ]
-                }))
+                    tokens: [{
+                        ...t.token,
+                        id: t.token.id || `token_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                        spent: false
+                    }]
+                }));
             }
         }
-
+        
+        // Add all new children to this node
         this.children = [...this.children, ...children];
-        // console.log("TREE:", {
-        //     parent: this.printTree(),
-        //     pCredits: this.creditLienTokens.reduce((sum, t) => sum + t.value, 0),
-        //     pDebits: this.debitLienTokens.reduce((sum, t) => sum + t.value, 0),
-        //     child: children[0].printTree(),
-        //     cCredits: children[0].creditLienTokens.reduce((sum, t) => sum + t.value, 0),
-        //     cDebits: children[0].debitLienTokens.reduce((sum, t) => sum + t.value, 0),
-        // })
+        
         return this.children;
     }
 
@@ -169,20 +290,14 @@ export class LienNode {
     }
 
     private async generateDebitNode(params: {
-        tokens: LienToken [],
-    }) {
-        // validation
-        if(params.tokens.length !== 3) {
-            throw new Error('Debit Node must not be have token length other than 3')
-        }
-
-        // create node
+        tokens: LienToken[];
+        account?: string;
+    }): Promise<LienNode> {
         const node = new LienNode({
-                account: this.account,
-                parent: this,
-                tokens: params.tokens
-            })
-
+            account: params.account || this.account,
+            parent: this,
+            tokens: params.tokens
+        });
         return node;
     }
 
@@ -221,42 +336,61 @@ export class LienNode {
      * @param indent - Used internally for indentation, do not provide
      * @param last - Used internally to determine tree structure, do not provide
      */
-    printTree(indent: string = '', last: boolean = true): string {
+    printTree(indent: string = '', last: boolean = true, showSpent: boolean = false): string {
         // Build the current node's representation
         let result = indent;
         result += last ? '└── ' : '├── ';
         result += `[${this.account}] `;
         
-        // Add token information
-        const creditTotal = this.creditLienTokens.reduce((sum, t) => sum + t.value, 0);
-        const debitTotal = this.debitLienTokens.reduce((sum, t) => sum + t.value, 0);
-        result += `(Credits: ${creditTotal}, Debits: ${debitTotal})`;
+        // Get all token information
+        const unspentCredits = this.unspentCreditTokens;
+        const unspentDebits = this.unspentDebitTokens;
+        const spentCredits = this.spentCreditTokens;
+        const spentDebits = this.spentDebitTokens;
+        
+        // Calculate token totals
+        const unspentCreditTotal = unspentCredits.reduce((sum, t) => sum + t.value, 0);
+        const unspentDebitTotal = unspentDebits.reduce((sum, t) => sum + t.value, 0);
+        
+        // Display unspent tokens
+        result += `(Unspent: +${unspentCreditTotal}/-${unspentDebitTotal}`;
+        
+        // Optionally display spent tokens
+        if (showSpent) {
+            const spentCreditTotal = spentCredits.reduce((sum, t) => sum + t.value, 0);
+            const spentDebitTotal = spentDebits.reduce((sum, t) => sum + t.value, 0);
+            result += `, Spent: +${spentCreditTotal}/-${spentDebitTotal}`;
+        }
+        
+        result += ')';
         
         // Add detailed token info if any tokens exist
-        if (this.creditLienTokens.length > 0 || this.debitLienTokens.length > 0) {
-            result += '\n';
-            const tokenIndent = indent + (last ? '    ' : '│   ');
+        const hasTokens = this.creditLienTokens.length > 0 || this.debitLienTokens.length > 0 || 
+                         spentCredits.length > 0 || spentDebits.length > 0;
+        
+        if (hasTokens) {
+            result += ' [';
             
-            // Print credit tokens
-            this.creditLienTokens.forEach((token, i) => {
-                const isLast = i === this.creditLienTokens.length - 1 && this.debitLienTokens.length === 0;
-                result += tokenIndent + (isLast ? '└── ' : '├── ');
-                result += `+${token.value} (${token.account})`;
-                if (i < this.creditLienTokens.length - 1 || this.debitLienTokens.length > 0) {
-                    result += '\n';
-                }
-            });
+            // Helper function to format token list
+            const formatTokens = (tokens: LienToken[], prefix: string) => {
+                return tokens
+                    .filter(token => showSpent || !token.spent)
+                    .map(t => {
+                        let tokenStr = `${prefix}${t.value}(${t.account}`;
+                        if (t.id) tokenStr += `#${t.id.substring(0, 4)}`;
+                        if (t.spent) tokenStr += ',spent';
+                        if (t.spentOn) tokenStr += `,${t.spentOn}`;
+                        return tokenStr + ')';
+                    });
+            };
             
-            // Print debit tokens
-            this.debitLienTokens.forEach((token, i) => {
-                const isLast = i === this.debitLienTokens.length - 1;
-                result += (i === 0 && this.creditLienTokens.length > 0 ? '\n' : '') + 
-                         tokenIndent + (isLast ? '└── ' : '├── ');
-                result += `-${token.value} (${token.account})`;
-                if (i < this.debitLienTokens.length - 1) {
-                    result += '\n';
-                }
-            });
+            const tokenStrings = [
+                ...formatTokens([...this.creditLienTokens, ...spentCredits], '+'),
+                ...formatTokens([...this.debitLienTokens, ...spentDebits], '-')
+            ];
+            
+            result += tokenStrings.join(', ');
+            result += ']';
         }
         
         // Add children
