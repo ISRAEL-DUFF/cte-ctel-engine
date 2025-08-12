@@ -78,6 +78,13 @@
         </header>
 
         <div class="bg-white rounded-lg shadow-md p-6">
+            <div id="invariant-panel" class="hidden mb-4 p-4 rounded border flex items-center justify-between">
+                <div>
+                    <p id="invariant-title" class="font-semibold">Invariant</p>
+                    <p id="invariant-values" class="text-sm text-gray-600"></p>
+                </div>
+                <span id="invariant-badge" class="px-2 py-1 text-xs font-semibold rounded"></span>
+            </div>
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
                 <p class="text-center text-gray-600">Generating visualization...</p>
@@ -120,12 +127,59 @@
             }
         });
 
+        // Resolve API endpoints for given sample name
+        function resolveEndpoints(sampleName) {
+            if (sampleName === 'default') {
+                return {
+                    markdown: '/cte/markdown',
+                    invariant: '/cte/invariant'
+                };
+            }
+            return {
+                markdown: `/cte/${sampleName}/markdown`,
+                invariant: `/cte/${sampleName}/invariant`
+            };
+        }
+
+        // Function to show invariant panel
+        function renderInvariant(inv) {
+            const panel = document.getElementById('invariant-panel');
+            const title = document.getElementById('invariant-title');
+            const values = document.getElementById('invariant-values');
+            const badge = document.getElementById('invariant-badge');
+
+            if (!inv) {
+                panel.classList.add('hidden');
+                return;
+            }
+
+            title.textContent = 'Invariant (Unspent Credits == Debits)';
+            values.textContent = `Unspent Credits: ${inv.unspentCredits} | Debits: ${inv.debits}`;
+
+            // Style based on status
+            panel.classList.remove('hidden');
+            panel.classList.remove('border-green-300','bg-green-50');
+            panel.classList.remove('border-red-300','bg-red-50');
+            badge.classList.remove('bg-green-100','text-green-800','bg-red-100','text-red-800');
+
+            if (inv.ok) {
+                panel.classList.add('border-green-300','bg-green-50');
+                badge.textContent = 'OK';
+                badge.classList.add('bg-green-100','text-green-800');
+            } else {
+                panel.classList.add('border-red-300','bg-red-50');
+                badge.textContent = 'FAIL';
+                badge.classList.add('bg-red-100','text-red-800');
+            }
+        }
+
         // Function to load a sample
         async function loadSample(sampleName) {
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
             const errorDiv = document.getElementById('error');
             const errorMessage = document.getElementById('error-message');
+            const endpoints = resolveEndpoints(sampleName);
             
             // Show loading, hide content and clear any previous errors
             loading.classList.remove('hidden');
@@ -133,18 +187,28 @@
             errorDiv.classList.add('hidden');
             
             try {
-                // Fetch the markdown from our API
-                const response = await fetch(`/cte/${sampleName}/markdown`);
+                // Fetch markdown and invariant in parallel
+                const [mdResp, invResp] = await Promise.all([
+                    fetch(endpoints.markdown),
+                    fetch(endpoints.invariant)
+                ]);
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                if (!mdResp.ok) {
+                    throw new Error(`Markdown HTTP error! status: ${mdResp.status}`);
                 }
-                
-                const markdown = await response.text();
+                if (!invResp.ok) {
+                    throw new Error(`Invariant HTTP error! status: ${invResp.status}`);
+                }
+
+                const markdown = await mdResp.text();
+                const invJson = await invResp.json();
                 
                 // Parse markdown to HTML
                 const html = marked.parse(markdown);
                 content.innerHTML = html;
+
+                // Render invariant
+                renderInvariant(invJson.invariant || invJson);
                 
                 // Find and render all mermaid diagrams
                 const mermaidElements = document.querySelectorAll('.language-mermaid');
@@ -176,6 +240,7 @@
                 console.error('Error loading sample:', error);
                 errorMessage.textContent = `Error: ${error.message}`;
                 errorDiv.classList.remove('hidden');
+                renderInvariant(null);
             } finally {
                 loading.classList.add('hidden');
             }

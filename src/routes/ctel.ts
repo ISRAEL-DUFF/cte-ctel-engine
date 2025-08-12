@@ -184,11 +184,13 @@ router.get('/tree', (req: Request, res: Response) => {
     try {
         const rootNode = createSampleHierarchy();
         const treeOutput = rootNode.printTree();
+        const invariant = rootNode.validateInvariant();
         
         res.json({
             status: 'ok',
             tree: treeOutput,
-            node: rootNode
+            node: rootNode,
+            invariant
         });
     } catch (error) {
         console.error('Error:', error);
@@ -248,6 +250,49 @@ router.get('/sample3/markdown', async (req: Request, res: Response) => {
         res.status(500).json({ 
             status: 'error', 
             message: error instanceof Error ? error.message : 'Unknown error occurred' 
+        });
+    }
+});
+
+// Invariant endpoints
+router.get('/invariant', (req: Request, res: Response) => {
+    try {
+        const rootNode = createSampleHierarchy();
+        const inv = rootNode.validateInvariant();
+        res.json({ status: 'ok', invariant: inv });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+        });
+    }
+});
+
+router.get('/sample2/invariant', async (req: Request, res: Response) => {
+    try {
+        const rootNode = await createSampleHierarchy2();
+        const inv = rootNode.validateInvariant();
+        res.json({ status: 'ok', invariant: inv });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+        });
+    }
+});
+
+router.get('/sample3/invariant', async (req: Request, res: Response) => {
+    try {
+        const rootNode = await createSampleHierarchy3();
+        const inv = rootNode.validateInvariant();
+        res.json({ status: 'ok', invariant: inv });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
         });
     }
 });

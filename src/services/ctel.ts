@@ -377,15 +377,21 @@ export class LienNode {
                     .map(t => {
                         let tokenStr = `${prefix}${t.value}(${t.account}`;
                         if (t.id) tokenStr += `#${t.id.substring(0, 4)}`;
-                        if (t.spent) tokenStr += ',spent';
+                        if (t.spent) {
+                            tokenStr += ',spent';
+                        } else {
+                            tokenStr += ',unspent';
+                        }
                         if (t.spentOn) tokenStr += `,${t.spentOn}`;
                         return tokenStr + ')';
                     });
             };
             
+            // Avoid duplication: include all credit/debit tokens once; spent visibility
+            // is controlled by the showSpent flag in the filter above.
             const tokenStrings = [
-                ...formatTokens([...this.creditLienTokens, ...spentCredits], '+'),
-                ...formatTokens([...this.debitLienTokens, ...spentDebits], '-')
+                ...formatTokens(this.creditLienTokens, '+'),
+                ...formatTokens(this.debitLienTokens, '-')
             ];
             
             result += tokenStrings.join(', ');
@@ -450,41 +456,57 @@ export class LienNode {
         // Start processing from the root node
         processNode(this);
         
-        // Add token details as subgraphs
+        // Add token details as subgraphs with spent/unspent annotations
         nodeMap.forEach((id, node) => {
-            const tokens = [
-                ...node.creditLienTokens.map(t => `+${t.value} (${t.account})`),
-            ];
-            const debitTokens = [
-                ...node.debitLienTokens.map(t => `-${t.value} (${t.account})`)
-            ];
-            
-            if (tokens.length > 0 || debitTokens.length > 0) {
+            const creditTokens = node.creditLienTokens;
+            const debitTokens = node.debitLienTokens;
+
+            if (creditTokens.length > 0 || debitTokens.length > 0) {
                 const subgraphId = `subgraph${id}`;
                 mermaidCode += `    subgraph ${subgraphId}[ ]\n`;
-                tokens.forEach((token, i) => {
-                    const tokenId = `${id}T${i}`;
-                    mermaidCode += `        ${tokenId}["${token}"]:::token\n`;
+
+                creditTokens.forEach((t, i) => {
+                    const tokenId = `${id}Tc${i}`;
+                    const status = t.spent ? 'spent' : 'unspent';
+                    const label = `+${t.value} (${t.account}) ${status}`;
+                    const klass = t.spent ? 'token-spent' : 'token-unspent';
+                    mermaidCode += `        ${tokenId}["${label}"]:::${klass}\n`;
                     mermaidCode += `        ${id} --> ${tokenId}\n`;
                 });
-                debitTokens.forEach((token, i) => {
-                    const tokenId = `${id}T${i}-debit`;
-                    mermaidCode += `        ${tokenId}["${token}"]:::token-debit\n`;
+
+                debitTokens.forEach((t, i) => {
+                    const tokenId = `${id}Td${i}`;
+                    const status = t.spent ? 'spent' : 'unspent';
+                    const label = `-${t.value} (${t.account}) ${status}`;
+                    const klass = t.spent ? 'token-debit-spent' : 'token-debit-unspent';
+                    mermaidCode += `        ${tokenId}["${label}"]:::${klass}\n`;
                     mermaidCode += `        ${id} --> ${tokenId}\n`;
                 });
+
                 mermaidCode += '    end\n';
             }
         });
         
-        // Add styles
-        mermaidCode += '    classDef token fill:#f9f9f9,stroke:#666,stroke-width:1px,font-size:10px;\n';
-        mermaidCode += '    classDef token-debit fill:#f9f9f9,stroke:#666,stroke-width:1px,font-size:10px,stroke:#ff0000;\n';
+        // Add styles (distinct for spent/unspent and debit/credit)
+        mermaidCode += '    classDef token-unspent fill:#f0fff4,stroke:#2f855a,stroke-width:1px,font-size:10px;\n';
+        mermaidCode += '    classDef token-spent fill:#f7fafc,stroke:#a0aec0,stroke-width:1px,font-size:10px;\n';
+        mermaidCode += '    classDef token-debit-unspent fill:#fff5f5,stroke:#c53030,stroke-width:1px,font-size:10px;\n';
+        mermaidCode += '    classDef token-debit-spent fill:#f7fafc,stroke:#e53e3e,stroke-width:1px,font-size:10px;\n';
         mermaidCode += '```';
         
+        // Invariant summary
+        const inv = this.validateInvariant();
+
         // Create the markdown with a title and the mermaid diagram
         return `# Lien Node Hierarchy\n\n${mermaidCode}\n\n` +
                `## Details\n` +
                `- **Total Nodes**: ${nodeId}\n` +
-               `- **Root Account**: ${this.account}\n`;
+               `- **Root Account**: ${this.account}\n` +
+               `- **Invariant OK**: ${inv.ok} (Unspent Credits: ${inv.unspentCredits}, Debits: ${inv.debits})\n\n` +
+               `## Legend\n` +
+               `- Green border: credit token (unspent)\n` +
+               `- Gray border: credit token (spent)\n` +
+               `- Red border: debit token (unspent)\n` +
+               `- Dark red border: debit token (spent)\n`;
     }
 }
