@@ -85,6 +85,13 @@
                 </div>
                 <span id="invariant-badge" class="px-2 py-1 text-xs font-semibold rounded"></span>
             </div>
+            <div class="mb-4 flex items-center gap-3">
+                <label for="order-select" class="text-sm text-gray-700">Traversal Order:</label>
+                <select id="order-select" class="text-sm border rounded px-2 py-1">
+                    <option value="preorder">Preorder (DFS)</option>
+                    <option value="bfs">Breadth-first (BFS)</option>
+                </select>
+            </div>
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
                 <p class="text-center text-gray-600">Generating visualization...</p>
@@ -97,6 +104,23 @@
                 <div class="text-center text-gray-500 py-8">
                     <p>Select a sample to begin visualization.</p>
                     <p class="text-sm mt-2">The diagram will be rendered here with Mermaid.js</p>
+                </div>
+            </div>
+            <div id="unspent-panel" class="hidden mt-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-2">Nodes With Unspent Credits</h2>
+                <div class="overflow-x-auto border rounded">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-600">
+                            <tr>
+                                <th class="px-3 py-2 text-left">#</th>
+                                <th class="px-3 py-2 text-left">Account</th>
+                                <th class="px-3 py-2 text-left">Unspent</th>
+                                <th class="px-3 py-2 text-left">Path</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unspent-body" class="divide-y">
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -132,12 +156,14 @@
             if (sampleName === 'default') {
                 return {
                     markdown: '/cte/markdown',
-                    invariant: '/cte/invariant'
+                    invariant: '/cte/invariant',
+                    unspent: '/cte/unspent'
                 };
             }
             return {
                 markdown: `/cte/${sampleName}/markdown`,
-                invariant: `/cte/${sampleName}/invariant`
+                invariant: `/cte/${sampleName}/invariant`,
+                unspent: `/cte/${sampleName}/unspent`
             };
         }
 
@@ -180,6 +206,7 @@
             const errorDiv = document.getElementById('error');
             const errorMessage = document.getElementById('error-message');
             const endpoints = resolveEndpoints(sampleName);
+            const orderSelect = document.getElementById('order-select');
             
             // Show loading, hide content and clear any previous errors
             loading.classList.remove('hidden');
@@ -187,10 +214,12 @@
             errorDiv.classList.add('hidden');
             
             try {
-                // Fetch markdown and invariant in parallel
-                const [mdResp, invResp] = await Promise.all([
+                // Fetch markdown, invariant and unspent in parallel
+                const order = orderSelect.value;
+                const [mdResp, invResp, unspentResp] = await Promise.all([
                     fetch(endpoints.markdown),
-                    fetch(endpoints.invariant)
+                    fetch(endpoints.invariant),
+                    fetch(`${endpoints.unspent}?order=${encodeURIComponent(order)}`)
                 ]);
                 
                 if (!mdResp.ok) {
@@ -199,9 +228,13 @@
                 if (!invResp.ok) {
                     throw new Error(`Invariant HTTP error! status: ${invResp.status}`);
                 }
+                if (!unspentResp.ok) {
+                    throw new Error(`Unspent HTTP error! status: ${unspentResp.status}`);
+                }
 
                 const markdown = await mdResp.text();
                 const invJson = await invResp.json();
+                const unspentJson = await unspentResp.json();
                 
                 // Parse markdown to HTML
                 const html = marked.parse(markdown);
@@ -209,6 +242,9 @@
 
                 // Render invariant
                 renderInvariant(invJson.invariant || invJson);
+
+                // Render unspent list
+                renderUnspent(unspentJson.items || []);
                 
                 // Find and render all mermaid diagrams
                 const mermaidElements = document.querySelectorAll('.language-mermaid');
@@ -241,9 +277,50 @@
                 errorMessage.textContent = `Error: ${error.message}`;
                 errorDiv.classList.remove('hidden');
                 renderInvariant(null);
+                renderUnspent(null);
             } finally {
                 loading.classList.add('hidden');
             }
+        }
+
+        function renderUnspent(items) {
+            const panel = document.getElementById('unspent-panel');
+            const body = document.getElementById('unspent-body');
+            if (!items || !Array.isArray(items)) {
+                panel.classList.add('hidden');
+                body.innerHTML = '';
+                return;
+            }
+            body.innerHTML = '';
+            items.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-3 py-2 text-gray-500">${idx+1}</td>
+                    <td class="px-3 py-2 font-medium">${item.account}</td>
+                    <td class="px-3 py-2">${item.unspent}</td>
+                    <td class="px-3 py-2 text-xs text-gray-600">${(item.path||[]).join(' / ')}</td>
+                `;
+                body.appendChild(tr);
+            });
+            panel.classList.remove('hidden');
+        }
+
+        // Re-load current sample when order changes (for convenience)
+        document.getElementById('order-select').addEventListener('change', () => {
+            // Find which sample button has active style? Simple approach: default.
+            // As we don't store current sample, reload default.
+            // Optional: we can store lastSampleName globally.
+            if (window.lastSampleName) {
+                loadSample(window.lastSampleName);
+            }
+        });
+
+        // Keep track of last sample
+        window.lastSampleName = 'default';
+        const origLoadSample = loadSample;
+        window.loadSample = function(sampleName) {
+            window.lastSampleName = sampleName;
+            return origLoadSample(sampleName);
         }
 
         // Load default sample when page loads

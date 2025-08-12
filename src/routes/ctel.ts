@@ -297,6 +297,62 @@ router.get('/sample3/invariant', async (req: Request, res: Response) => {
     }
 });
 
+// ----- Unspent nodes viewers -----
+function buildPath(node: any): string[] {
+    const path: string[] = [];
+    let curr = node;
+    while (curr) {
+        path.push(curr.account);
+        curr = curr.parent;
+    }
+    return path.reverse();
+}
+
+function serializeUnspent(rootNode: any, order: 'preorder'|'bfs') {
+    const nodes = rootNode.collectUnspentNodes(order);
+    return nodes.map((n: any) => ({
+        account: n.account,
+        unspent: n.unspentCreditTokens.reduce((s: number, t: any) => s + t.value, 0),
+        path: buildPath(n)
+    }));
+}
+
+router.get('/unspent', (req: Request, res: Response) => {
+    try {
+        const rootNode = createSampleHierarchy();
+        const order = (req.query.order === 'bfs' ? 'bfs' : 'preorder') as 'preorder'|'bfs';
+        const items = serializeUnspent(rootNode, order);
+        res.json({ status: 'ok', order, items });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred' });
+    }
+});
+
+router.get('/sample2/unspent', async (req: Request, res: Response) => {
+    try {
+        const rootNode = await createSampleHierarchy2();
+        const order = (req.query.order === 'bfs' ? 'bfs' : 'preorder') as 'preorder'|'bfs';
+        const items = serializeUnspent(rootNode, order);
+        res.json({ status: 'ok', order, items });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred' });
+    }
+});
+
+router.get('/sample3/unspent', async (req: Request, res: Response) => {
+    try {
+        const rootNode = await createSampleHierarchy3();
+        const order = (req.query.order === 'bfs' ? 'bfs' : 'preorder') as 'preorder'|'bfs';
+        const items = serializeUnspent(rootNode, order);
+        res.json({ status: 'ok', order, items });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred' });
+    }
+});
+
 // Legacy endpoint that returns both (for backward compatibility)
 router.get('/', (req: Request, res: Response) => {
     try {

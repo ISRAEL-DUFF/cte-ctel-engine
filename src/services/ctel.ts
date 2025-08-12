@@ -84,6 +84,42 @@ export class LienNode {
         return [...this.debitLienTokens, ...this.spentDebitTokens];
     }
 
+    /**
+     * Collect all nodes that currently have unspent credit tokens, in a deterministic traversal order.
+     * Defaults to preorder (DFS). Optionally supports breadth-first (BFS).
+     * Complexity: O(N) where N is number of nodes in the subtree.
+     */
+    collectUnspentNodes(order: 'preorder' | 'bfs' = 'preorder'): LienNode[] {
+        const result: LienNode[] = [];
+
+        if (order === 'bfs') {
+            const queue: LienNode[] = [this];
+            while (queue.length) {
+                const node = queue.shift()!;
+                if (node.unspentCreditTokens.length > 0) {
+                    result.push(node);
+                }
+                // Preserve existing child order for determinism
+                for (const child of node.children) queue.push(child);
+            }
+            return result;
+        }
+
+        // Preorder DFS (node before children)
+        const stack: LienNode[] = [this];
+        while (stack.length) {
+            const node = stack.pop()!;
+            if (node.unspentCreditTokens.length > 0) {
+                result.push(node);
+            }
+            // Push children in reverse so that left-to-right order is preserved
+            for (let i = node.children.length - 1; i >= 0; i--) {
+                stack.push(node.children[i]);
+            }
+        }
+        return result;
+    }
+
     // Helper to mark tokens as spent
     private markTokensAsSpent(tokens: LienToken[], reason: string = 'split'): void {
         tokens.forEach(token => {
