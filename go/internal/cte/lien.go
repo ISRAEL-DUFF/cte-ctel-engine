@@ -289,57 +289,110 @@ func (n *LienNode) PrintTree(showSpent bool) string {
 	return b.String()
 }
 
-func (n *LienNode) PrintMarkdown() string {
-	// Minimal placeholder mermaid to keep parity; can be expanded later
-	var b strings.Builder
-	b.WriteString("# Lien Node Hierarchy\n\n")
-	b.WriteString("```mermaid\nflowchart TD\n")
-	id := 0
-	nodeMap := map[*LienNode]string{}
-	var walk func(*LienNode)
-	walk = func(cur *LienNode) {
-		if _, ok := nodeMap[cur]; !ok {
-			id++
-			nodeMap[cur] = fmt.Sprintf("N%d", id)
-		}
-		for _, ch := range cur.Children {
-			if _, ok := nodeMap[ch]; !ok {
-				id++
-				nodeMap[ch] = fmt.Sprintf("N%d", id)
-			}
-			fmt.Fprintf(&b, "    %s[%q]-->%s[%q]\n", nodeMap[cur], cur.Account, nodeMap[ch], ch.Account)
-			walk(ch)
-		}
-	}
-	walk(n)
-	b.WriteString("```\n")
-	inv := n.ValidateInvariant()
-	fmt.Fprintf(&b, "\n- Invariant OK: %t (Unspent Credits: %d, Debits: %d)\n", inv.Ok, inv.UnspentCredits, inv.Debits)
-	return b.String()
+func (n *LienNode) PrintMarkdown() string { 
+    // Rich Mermaid output mirroring TS: nodes/edges, token subgraphs, classes, legend, invariant
+    var b strings.Builder
+    b.WriteString("# Lien Node Hierarchy\n\n")
+    b.WriteString("```mermaid\n")
+    b.WriteString("flowchart TD\n")
+
+    // Map nodes to IDs
+    id := 0
+    nodeMap := map[*LienNode]string{}
+    var ensureID func(*LienNode) string
+    ensureID = func(cur *LienNode) string {
+        if v, ok := nodeMap[cur]; ok {
+            return v
+        }
+        id++
+        nid := fmt.Sprintf("N%d", id)
+        nodeMap[cur] = nid
+        return nid
+    }
+
+    // Edges and ensure IDs
+    var walk func(*LienNode)
+    walk = func(cur *LienNode) {
+        _ = ensureID(cur)
+        for _, ch := range cur.Children {
+            chID := ensureID(ch)
+            fmt.Fprintf(&b, "    %s[%q] --> %s[%q]\n", nodeMap[cur], cur.Account, chID, ch.Account)
+            walk(ch)
+        }
+    }
+    walk(n)
+
+    // Token subgraphs per node
+    for node, nid := range nodeMap {
+        if len(node.creditLienTokens) == 0 && len(node.debitLienTokens) == 0 {
+            continue
+        }
+        subgraphID := "subgraph" + nid
+        fmt.Fprintf(&b, "    subgraph %s[ ]\n", subgraphID)
+        // Credits
+        for i, t := range node.creditLienTokens {
+            tokID := fmt.Sprintf("%sTc%d", nid, i)
+            status := "unspent"
+            class := "token-unspent"
+            if t.Spent {
+                status = "spent"
+                class = "token-spent"
+            }
+            label := fmt.Sprintf("+%d (%s) %s", t.Value, t.Account, status)
+            fmt.Fprintf(&b, "        %s[\"%s\"]:::%s\n", tokID, label, class)
+            fmt.Fprintf(&b, "        %s --> %s\n", nid, tokID)
+        }
+        // Debits
+        for i, t := range node.debitLienTokens {
+            tokID := fmt.Sprintf("%sTd%d", nid, i)
+            status := "unspent"
+            class := "token-debit-unspent"
+            if t.Spent {
+                status = "spent"
+                class = "token-debit-spent"
+            }
+            label := fmt.Sprintf("-%d (%s) %s", t.Value, t.Account, status)
+            fmt.Fprintf(&b, "        %s[\"%s\"]:::%s\n", tokID, label, class)
+            fmt.Fprintf(&b, "        %s --> %s\n", nid, tokID)
+        }
+        b.WriteString("    end\n")
+    }
+
+    // Styles similar to TS
+    b.WriteString("    classDef token-unspent fill:#eaffea,stroke:#2a7,stroke-width:1px;\n")
+    b.WriteString("    classDef token-spent fill:#ffefef,stroke:#c44,stroke-width:1px,stroke-dasharray: 3 3;\n")
+    b.WriteString("    classDef token-debit-unspent fill:#e6f0ff,stroke:#36c,stroke-width:1px;\n")
+    b.WriteString("    classDef token-debit-spent fill:#f0e6ff,stroke:#63c,stroke-width:1px,stroke-dasharray: 3 3;\n")
+
+    b.WriteString("```\n")
+
+    // Invariant summary
+    inv := n.ValidateInvariant()
+    fmt.Fprintf(&b, "\n- Invariant OK: %t (Unspent Credits: %d, Debits: %d)\n", inv.Ok, inv.UnspentCredits, inv.Debits)
+    return b.String()
 }
 
-// ----- Helpers used by routes -----
 func buildPath(n *LienNode) []string {
-	path := []string{}
-	for cur := n; cur != nil; cur = cur.Parent {
-		path = append(path, cur.Account)
-	}
-	// reverse
-	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
-		path[i], path[j] = path[j], path[i]
-	}
-	return path
+    path := []string{}
+    for cur := n; cur != nil; cur = cur.Parent {
+        path = append(path, cur.Account)
+    }
+    // reverse
+    for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+        path[i], path[j] = path[j], path[i]
+    }
+    return path
 }
 
 func serializeUnspent(root *LienNode, order string) []UnspentItem {
-	nodes := root.CollectUnspentNodes(order)
-	items := make([]UnspentItem, 0, len(nodes))
-	for _, n := range nodes {
-		un := 0
-		for _, t := range n.UnspentCreditTokens() {
-			un += t.Value
-		}
-		items = append(items, UnspentItem{Account: n.Account, Unspent: un, Path: buildPath(n)})
-	}
-	return items
+    nodes := root.CollectUnspentNodes(order)
+    items := make([]UnspentItem, 0, len(nodes))
+    for _, n := range nodes {
+        un := 0
+        for _, t := range n.UnspentCreditTokens() {
+            un += t.Value
+        }
+        items = append(items, UnspentItem{Account: n.Account, Unspent: un, Path: buildPath(n)})
+    }
+    return items
 }
