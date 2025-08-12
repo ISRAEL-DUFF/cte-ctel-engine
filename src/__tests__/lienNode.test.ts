@@ -68,8 +68,8 @@ describe('LienNode Token Management', () => {
         ]
       });
 
-      // Should have 2 children (the two splits)
-      expect(rootNode.children.length).toBe(2);
+      // Should have 3 children (2 splits + 1 remainder under parent account)
+      expect(rootNode.children.length).toBe(3);
       
       // Check spent status on root - the original 1000 credit should be spent
       const spentCredits = rootNode.spentCreditTokens;
@@ -80,12 +80,8 @@ describe('LienNode Token Management', () => {
       const unspentCredits = rootNode.unspentCreditTokens;
       expect(unspentCredits.length).toBe(0);
       
-      // Debug: Log all children accounts
-      console.log('Children accounts:', rootNode.children.map(c => c.account));
-      
       // Check the child with lien
       const childWithLien = rootNode.children.find(c => c.account === 'ChildWithLien');
-      console.log('ChildWithLien found:', childWithLien);
       expect(childWithLien).toBeDefined();
       // It should have an unspent credit token of 500 (do not assume ordering)
       const childWithLienCredits = childWithLien?.unspentCreditTokens || [];
@@ -100,6 +96,11 @@ describe('LienNode Token Management', () => {
       const debitTokens = childWithLien?.allDebitTokens || [];
       expect(debitTokens.length).toBe(1);
       expect(debitTokens[0].value).toBe(300);
+
+      // Check the spawned remainder on the parent account
+      const remainderNode = rootNode.children.find(c => c.account === 'Root');
+      expect(remainderNode).toBeDefined();
+      expect(remainderNode?.unspentCreditTokens[0].value).toBe(1000 - (500 + 200));
     });
   });
 
