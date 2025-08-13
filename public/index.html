@@ -99,6 +99,10 @@
                     <option value="preorder">Preorder (DFS)</option>
                     <option value="bfs">Breadth-first (BFS)</option>
                 </select>
+                <label class="ml-4 inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" id="show-tree" class="border rounded" />
+                    Show Tree (ASCII)
+                </label>
             </div>
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
@@ -112,6 +116,12 @@
                 <div class="text-center text-gray-500 py-8">
                     <p>Select a sample to begin visualization.</p>
                     <p class="text-sm mt-2">The diagram will be rendered here with Mermaid.js</p>
+                </div>
+            </div>
+            <div id="tree-panel" class="hidden mt-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-2">Tree (Text)</h2>
+                <div class="overflow-x-auto border rounded bg-gray-50">
+                    <pre id="tree-text" class="p-3 text-sm text-gray-800 whitespace-pre-wrap"></pre>
                 </div>
             </div>
             <div id="unspent-panel" class="hidden mt-6">
@@ -182,12 +192,14 @@
             if (sampleName === 'default') {
                 return {
                     markdown: `${base}/cte/markdown`,
+                    tree: `${base}/cte/tree`,
                     invariant: `${base}/cte/invariant`,
                     unspent: `${base}/cte/unspent`
                 };
             }
             return {
                 markdown: `${base}/cte/${sampleName}/markdown`,
+                tree: `${base}/cte/${sampleName}/tree`,
                 invariant: `${base}/cte/${sampleName}/invariant`,
                 unspent: `${base}/cte/${sampleName}/unspent`
             };
@@ -233,6 +245,9 @@
             const errorMessage = document.getElementById('error-message');
             const endpoints = resolveEndpoints(sampleName);
             const orderSelect = document.getElementById('order-select');
+            const showTree = document.getElementById('show-tree').checked;
+            const treePanel = document.getElementById('tree-panel');
+            const treeText = document.getElementById('tree-text');
             
             // Show loading, hide content and clear any previous errors
             loading.classList.remove('hidden');
@@ -271,6 +286,20 @@
 
                 // Render unspent list
                 renderUnspent(unspentJson.items || []);
+
+                // Optionally fetch and render tree
+                if (showTree) {
+                    const treeResp = await fetch(endpoints.tree);
+                    if (!treeResp.ok) { throw new Error(`Tree HTTP error! status: ${treeResp.status}`); }
+                    const treeJson = await treeResp.json();
+                    // treeJson may be {status, tree, invariant}
+                    const treeStr = treeJson.tree || (typeof treeJson === 'string' ? treeJson : '');
+                    treeText.textContent = treeStr || 'No tree available';
+                    treePanel.classList.remove('hidden');
+                } else {
+                    treePanel.classList.add('hidden');
+                    treeText.textContent = '';
+                }
                 
                 // Find and render all mermaid diagrams
                 const mermaidElements = document.querySelectorAll('.language-mermaid');
@@ -304,6 +333,9 @@
                 errorDiv.classList.remove('hidden');
                 renderInvariant(null);
                 renderUnspent(null);
+                const treePanel = document.getElementById('tree-panel');
+                const treeText = document.getElementById('tree-text');
+                if (treePanel && treeText) { treePanel.classList.add('hidden'); treeText.textContent = ''; }
             } finally {
                 loading.classList.add('hidden');
             }
@@ -336,6 +368,13 @@
             // Find which sample button has active style? Simple approach: default.
             // As we don't store current sample, reload default.
             // Optional: we can store lastSampleName globally.
+            if (window.lastSampleName) {
+                loadSample(window.lastSampleName);
+            }
+        });
+
+        // Toggle tree panel reloads current sample to fetch tree when enabled
+        document.getElementById('show-tree').addEventListener('change', () => {
             if (window.lastSampleName) {
                 loadSample(window.lastSampleName);
             }

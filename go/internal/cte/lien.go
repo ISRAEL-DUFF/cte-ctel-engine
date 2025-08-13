@@ -78,6 +78,13 @@ func (n *LienNode) AllDebitTokens() []LienToken {
 	return res
 }
 
+// AllCreditTokens returns all credit tokens (spent and unspent).
+func (n *LienNode) AllCreditTokens() []LienToken {
+	res := make([]LienToken, 0, len(n.creditLienTokens))
+	res = append(res, n.creditLienTokens...)
+	return res
+}
+
 // ----- Invariant helpers -----
 func (n *LienNode) SumUnspentCreditsRecursive() int {
 	sum := 0
